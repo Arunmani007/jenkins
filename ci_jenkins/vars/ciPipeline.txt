@@ -1,0 +1,39 @@
+## ciPipeline
+
+Standard CI pipeline for application repositories. Place a `.ci/Jenkinsfile` in your repo
+containing:
+
+```groovy
+@Library('ci-shared-library') _
+ciPipeline()
+```
+
+Optional overrides can be passed directly or via `.ci/ci-config.yaml`:
+
+```groovy
+@Library('ci-shared-library') _
+ciPipeline(
+    imageName: 'my-app',
+    artifactoryRepo: 'docker-local',
+    unitTestCommand: 'make test'
+)
+```
+
+### Stages
+
+1. Checkout
+2. Load Configuration
+
+Stages 3+ run inside the `buildImage` container (docker socket mounted in):
+
+3. Validate Dockerfile (hadolint)
+4. Unit Tests (optional)
+5. Ensure Integration Job (Job DSL, idempotent)
+6. Build Image (docker build)
+7. Scan Image (Trivy + Dockle)
+8. Push to Artifactory (candidate tag)
+9. Integration Tests (trigger companion job or inline command)
+10. Promote Image (`:latest`, main/master only)
+
+See `docs/README.md` and `docs/ARCHITECTURE.md` in the shared library repository for full
+configuration reference and architecture diagrams.

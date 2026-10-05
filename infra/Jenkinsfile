@@ -1,0 +1,101 @@
+// Builds and publishes the two infra images, replacing the manual steps in
+// infra/README.md. Place this as infra/Jenkinsfile and point a pipeline job at
+// this repo with Script Path = infra/Jenkinsfile.
+//
+// Runs entirely via `docker run` of official tool images (gcloud, packer) so
+// the agent only needs Docker - consistent with the rest of this project's
+// Docker-outside-of-Docker pattern. No JSON key: auth comes from the agent
+// VM's attached service account (metadata server / ADC).
+//
+// Prerequisite: whichever service account is attached to the agent running
+// this job needs, in addition to roles/artifactregistry.writer, the compute
+// permissions Packer's googlecompute builder requires (instances/disks/images
+// create+delete+get, zoneOperations.get, globalOperations.get). Consider a
+// dedicated "image-builder" service account rather than widening the
+// jenkins-agent SA used for app builds - see infra/terraform/iam.tf.
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'PROJECT_ID', defaultValue: '', description: 'GCP project ID')
+        string(name: 'REGION', defaultValue: 'us', description: 'Artifact Registry region/multi-region')
+        string(name: 'ARTIFACT_REPO', defaultValue: 'ci', description: 'Artifact Registry repository name')
+        string(name: 'IMAGE_FAMILY', defaultValue: 'jenkins-gce-agent', description: 'Packer output image family')
+        string(name: 'ZONE', defaultValue: 'us-central1-a', description: 'Zone Packer builds the temporary VM in')
+    }
+
+    environment {
+        REGISTRY = "${params.REGION}-docker.pkg.dev/${params.PROJECT_ID}/${params.ARTIFACT_REPO}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: 'https://github.com/arunmani06/test.git',
+                    branch: 'main',
+                    credentialsId: '600ea284-8572-4604-ad2c-141f60d72554'
+            }
+        }
+
+        stage('Build jenkins-build image') {
+            steps {
+                script {
+                    env.SHORT_SHA   = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    env.BUILD_IMAGE = "${REGISTRY}/jenkins-build:${env.BUILD_NUMBER}-${env.SHORT_SHA}"
+                }
+                dir('infra/docker/jenkins-build') {
+                    sh "docker build -t ${env.BUILD_IMAGE} -t ${REGISTRY}/jenkins-build:latest ."
+                }
+            }
+        }
+
+        stage('Scan jenkins-build image') {
+            steps {
+                sh """
+                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                        aquasec/trivy:latest image --exit-code 1 --severity CRITICAL,HIGH ${env.BUILD_IMAGE}
+                """
+            }
+        }
+
+        stage('Push jenkins-build image') {
+            steps {
+                sh """
+                    access_token=\$(docker run --rm --network host google/cloud-sdk:slim gcloud auth print-access-token)
+                    echo "\$access_token" | docker login -u oauth2accesstoken --password-stdin https://${params.REGION}-docker.pkg.dev
+                    docker push ${env.BUILD_IMAGE}
+                    docker push ${REGISTRY}/jenkins-build:latest
+                """
+            }
+        }
+
+        stage('Packer init') {
+            steps {
+                dir('infra/packer') {
+                    sh 'docker run --rm --network host -v $PWD:/pkr -w /pkr hashicorp/packer:latest init gce-agent-image.pkr.hcl'
+                }
+            }
+        }
+
+        stage('Build GCE agent image') {
+            steps {
+                dir('infra/packer') {
+                    sh """
+                        docker run --rm --network host -v \$PWD:/pkr -w /pkr hashicorp/packer:latest build \
+                            -var "project_id=${params.PROJECT_ID}" \
+                            -var "zone=${params.ZONE}" \
+                            -var "image_family=${params.IMAGE_FAMILY}" \
+                            -var "build_image=${env.BUILD_IMAGE}" \
+                            gce-agent-image.pkr.hcl
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker image prune -f || true'
+        }
+    }
+}

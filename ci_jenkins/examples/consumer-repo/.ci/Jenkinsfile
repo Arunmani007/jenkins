@@ -1,0 +1,5 @@
+@Library('ci-shared-library') _
+
+// Minimal CI entry point. Place this file at .ci/Jenkinsfile in your repo and
+// configure the Jenkins multibranch job's "Script Path" to .ci/Jenkinsfile.
+ciPipeline()

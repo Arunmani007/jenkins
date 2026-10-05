@@ -1,0 +1,28 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is auto-loaded by `terraform apply` (no -var-file needed).
+# Anything left unset here that has no default in variables.tf (e.g.
+# project_id, shared_library_repo_url) will prompt interactively at apply time.
+#
+# Do NOT put github_token here - it's sensitive and excluded from tfvars by
+# .gitignore. Pass it via the TF_VAR_github_token environment variable instead.
+
+project_id = "my-gcp-project"
+region     = "us-central1"
+zone       = "us-central1-a"
+
+controller_image = "us-docker.pkg.dev/my-gcp-project/ci/jenkins-controller:latest"
+
+shared_library_repo_url        = "https://github.com/<org>/<ci-shared-library-repo>.git"
+shared_library_default_version = "main"
+
+github_org            = "<org-to-auto-scan>"
+github_credentials_id = "github-token"
+
+admin_username = "admin"
+
+agent_image_family = "jenkins-gce-agent"
+agent_machine_type = "e2-medium"
+instance_cap       = 10
+
+# Leave empty to require an IAP tunnel instead of exposing the UI on the VPC.
+admin_access_cidrs = []

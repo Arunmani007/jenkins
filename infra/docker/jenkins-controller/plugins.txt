@@ -1,0 +1,15 @@
+workflow-aggregator
+git
+job-dsl
+pipeline-utility-steps
+credentials-binding
+docker-workflow
+junit
+timestamper
+ws-cleanup
+slack
+configuration-as-code
+google-compute-engine
+google-oauth-plugin
+role-strategy
+github-branch-source

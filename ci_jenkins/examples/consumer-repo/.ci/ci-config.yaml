@@ -1,0 +1,21 @@
+# Optional overrides for ciPipeline. All fields are optional; see the shared
+# library README for the full list of defaults.
+
+imageName: my-app
+registry: artifactory.example.com
+artifactoryRepo: docker-local
+artifactoryCredentialsId: artifactory-creds
+
+dockerfilePath: Dockerfile
+buildContext: .
+
+unitTestCommand: "make test"
+unitTestResultsPattern: "**/test-results/*.xml"
+
+vulnerabilitySeverity: "CRITICAL,HIGH"
+failOnVulnerabilities: true
+
+integrationTestMode: job   # 'job' or 'inline'
+integrationJobFolder: integration-tests
+
+notifyChannel: "#my-app-ci"

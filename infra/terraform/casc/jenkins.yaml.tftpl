@@ -1,0 +1,133 @@
+jenkins:
+  systemMessage: "Managed via Terraform + JCasC - do not edit cloud configuration via the UI"
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${admin_username}"
+          password: "$${ADMIN_PASSWORD}"
+  authorizationStrategy:
+    roleBased:
+      roles:
+        global:
+          - name: "admin"
+            description: "Full administrative access"
+            permissions:
+              - "Overall/Administer"
+            assignments:
+              - "${admin_username}"
+          - name: "developer"
+            description: "Read, build, and cancel jobs - no admin access"
+            permissions:
+              - "Overall/Read"
+              - "Job/Read"
+              - "Job/Build"
+              - "Job/Cancel"
+              - "Job/Workspace"
+            assignments:
+              - "authenticated"
+  clouds:
+    - computeEngine:
+        cloudName: "${cloud_name}"
+        projectId: "${project_id}"
+        credentialsId: "gce-vm-metadata"
+        instanceCapStr: "${instance_cap}"
+        configurations:
+          - namePrefix: "jenkins-agent"
+            description: "Ephemeral Docker build agent, created on demand"
+            mode: EXCLUSIVE
+            labelString: "docker"
+            numExecutorsStr: "1"
+            oneShot: true
+            runAsUser: jenkins
+            javaExecPath: java
+            retentionTimeMinutesStr: "10"
+            launchTimeoutSecondsStr: "300"
+            region: "${region}"
+            zone: "${zone}"
+            machineType: "${agent_machine_type}"
+            networkConfiguration:
+              autofilled:
+                network: "${network}"
+                subnetwork: "${subnetwork}"
+            networkTags: "jenkins-agent"
+            useInternalAddress: true
+            networkInterfaceIpStackMode:
+              singleStack:
+                externalIPV4Address: false
+            bootDiskSourceImageProject: "${project_id}"
+            bootDiskSourceImageName: "family/${agent_image_family}"
+            bootDiskType: pd-ssd
+            bootDiskSizeGbStr: "30"
+            bootDiskAutoDelete: true
+            serviceAccountEmail: "${agent_service_account_email}"
+            # Dynamic per-boot step: the GCE guest agent creates the `jenkins`
+            # Linux user from the SSH key the plugin pushes at connect time, but
+            # we pre-create it here so docker group membership is ready first.
+            startupScript: |
+              #!/bin/bash
+              set -euo pipefail
+              id -u jenkins &>/dev/null || useradd -m -s /bin/bash jenkins
+              usermod -aG docker jenkins
+
+unclassified:
+  location:
+    url: "http://${controller_internal_ip}:8080/"
+  globalLibraries:
+    libraries:
+      - name: "ci-shared-library"
+        defaultVersion: "${shared_library_default_version}"
+        implicit: false
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "${shared_library_repo_url}"
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          # Controller runs on this GCE VM, so no JSON key is needed - the
+          # plugin uses the VM's own attached service account.
+          - googleRobotMetadata:
+              id: "gce-vm-metadata"
+              projectId: "${project_id}"
+          - string:
+              scope: GLOBAL
+              id: "${github_credentials_id}"
+              secret: "$${GITHUB_TOKEN}"
+              description: "GitHub PAT for organization folder repo scanning"
+%{ if github_org != "" }
+# Auto-discovers every repo under this GitHub org/user with a .ci/Jenkinsfile
+# and creates a multibranch pipeline job for it - no manual "New Item" needed.
+# Job DSL method names are plugin-version-dependent: if this fails to apply,
+# verify the syntax against <jenkins-url>/plugin/job-dsl/api-viewer/index.html
+# and adjust before relying on it.
+jobs:
+  - script: |
+      organizationFolder('${github_org}') {
+        description('Auto-discovers repos with .ci/Jenkinsfile - managed by Terraform/JCasC')
+        organizations {
+          github {
+            repoOwner('${github_org}')
+            credentialsId('${github_credentials_id}')
+          }
+        }
+        projectFactories {
+          workflowMultiBranchProjectFactory {
+            scriptPath('.ci/Jenkinsfile')
+          }
+        }
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeepStr('20')
+          }
+        }
+        triggers {
+          periodicFolderTrigger {
+            interval('1d')
+          }
+        }
+      }
+%{ endif }

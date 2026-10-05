@@ -1,0 +1,5 @@
+# Example .trivyignore for consumer repos.
+# Copy into the repo root as .trivyignore to suppress specific, reviewed CVEs.
+# One CVE ID per line, with a comment explaining why it is ignored.
+#
+# CVE-2023-00000  # false positive - not reachable in our usage, reviewed 2026-01-01

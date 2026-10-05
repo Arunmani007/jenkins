@@ -1,0 +1,26 @@
+// Example custom integration test pipeline for this repo. If this file exists,
+// the shared library uses it instead of the default placeholder when wiring up
+// the companion integration-test job.
+pipeline {
+    agent { label 'docker' }
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Full image reference produced by the CI pipeline')
+    }
+    stages {
+        stage('Start Test Environment') {
+            steps {
+                sh "docker compose -f .ci/docker-compose.integration.yml up -d"
+            }
+        }
+        stage('Run Integration Tests') {
+            steps {
+                sh "IMAGE_TAG=${params.IMAGE_TAG} ./scripts/run-integration-tests.sh"
+            }
+        }
+    }
+    post {
+        always {
+            sh "docker compose -f .ci/docker-compose.integration.yml down -v"
+        }
+    }
+}

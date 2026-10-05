@@ -1,0 +1,15 @@
+*.class
+.groovy/
+reports/
+.ci-seed/
+*.log
+.DS_Store
+
+# infra/ (Terraform + Packer)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+packer_cache/
+

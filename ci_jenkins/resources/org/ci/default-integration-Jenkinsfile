@@ -1,0 +1,22 @@
+// Default integration test pipeline used when a repo does not provide its own
+// .ci/integration-Jenkinsfile. Replace this with real integration tests
+// (e.g. docker-compose up + a test suite, or deploy to an ephemeral namespace).
+pipeline {
+    agent { label 'docker' }
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Full image reference produced by the CI pipeline')
+    }
+    stages {
+        stage('Pull Image') {
+            steps {
+                sh "docker pull ${params.IMAGE_TAG}"
+            }
+        }
+        stage('Run Integration Tests') {
+            steps {
+                echo 'No custom integration tests found for this repo (placeholder stage).'
+                sh "docker run --rm ${params.IMAGE_TAG} echo 'placeholder integration test'"
+            }
+        }
+    }
+}
