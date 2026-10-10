@@ -15,7 +15,9 @@ jenkins:
             permissions:
               - "Overall/Administer"
             assignments:
-              - "${admin_username}"
+%{ for u in admin_usernames ~}
+              - "${u}"
+%{ endfor ~}
           - name: "developer"
             description: "Read, build, and cancel jobs - no admin access"
             permissions:
@@ -72,7 +74,7 @@ jenkins:
 
 unclassified:
   location:
-    url: "http://${controller_internal_ip}:8080/"
+    url: "${jenkins_url}"
   globalLibraries:
     libraries:
       - name: "ci-shared-library"

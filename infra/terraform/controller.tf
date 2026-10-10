@@ -6,6 +6,10 @@ resource "google_compute_address" "controller_internal" {
 }
 
 locals {
+  # Prefer the public domain (once the LB + Cloud DNS mapping exist) over the
+  # internal IP for Jenkins' own notion of its URL.
+  jenkins_url = var.enable_jenkins_lb && var.jenkins_domain_name != "" ? "http://${var.jenkins_domain_name}/" : "http://${google_compute_address.controller_internal.address}:8080/"
+
   casc_yaml = templatefile("${path.module}/casc/jenkins.yaml.tftpl", {
     project_id                     = var.project_id
     region                          = var.region
@@ -17,8 +21,9 @@ locals {
     agent_service_account_email     = google_service_account.agent.email
     instance_cap                    = var.instance_cap
     cloud_name                      = "gcp-ephemeral-agents"
-    controller_internal_ip          = google_compute_address.controller_internal.address
+    jenkins_url                     = local.jenkins_url
     admin_username                  = var.admin_username
+    admin_usernames                 = distinct(concat([var.admin_username], var.additional_admin_usernames))
     shared_library_repo_url         = var.shared_library_repo_url
     shared_library_default_version  = var.shared_library_default_version
     github_org                      = var.github_org
@@ -63,6 +68,23 @@ locals {
   EOT
 }
 
+# Jenkins' controller is a stateful, single-writer process (JENKINS_HOME,
+# in-memory build queue/executors) - it runs as a single VM, not a cluster.
+# This health check is only used for the optional load balancer's backend
+# health awareness (see loadbalancer.tf), not auto-healing/recreation.
+resource "google_compute_health_check" "controller" {
+  name                = "jenkins-controller-hc"
+  check_interval_sec  = 10
+  timeout_sec         = 5
+  healthy_threshold   = 2
+  unhealthy_threshold = 3
+
+  http_health_check {
+    port         = 8080
+    request_path = "/login"
+  }
+}
+
 resource "google_compute_instance" "controller" {
   name         = "jenkins-controller"
   machine_type = var.controller_machine_type
@@ -100,6 +122,20 @@ resource "google_compute_instance" "controller" {
   }
 
   allow_stopping_for_update = true
+}
+
+# Unmanaged instance group wrapping the single VM, solely so the optional
+# load balancer's backend service has something to point at.
+resource "google_compute_instance_group" "controller" {
+  count     = var.enable_jenkins_lb ? 1 : 0
+  name      = "jenkins-controller-ig"
+  zone      = var.zone
+  instances = [google_compute_instance.controller.self_link]
+
+  named_port {
+    name = "http"
+    port = 8080
+  }
 }
 
 resource "google_compute_disk" "jenkins_home" {

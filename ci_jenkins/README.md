@@ -105,6 +105,17 @@ See [examples/consumer-repo](examples/consumer-repo) for a complete example.
 | `notifyChannel` | `null` | Slack channel; notifications skipped if unset |
 | `pushEnabled` | `true` on `main`/`master`, else `false` | Whether to push/promote |
 
+## Security scan bypass (admin-only)
+
+Every pipeline job gets a `BYPASS_SECURITY_SCAN` build parameter (checkbox),
+for retriggering a build that failed the vulnerability gate without waiting
+for a CVE fix. It's only honored for users with Jenkins `Overall/Administer`
+permission - checked server-side in `SecurityScanner.groovy` against the
+build's triggering user, not just trusted from the parameter value - so a
+developer ticking the box themselves has no effect and is logged as denied.
+The parameter only appears starting from a job's second build (standard
+Jenkins limitation for parameters added via `properties()`).
+
 ## Additional things covered beyond the original 4 steps
 
 These are easy to miss but are included because they matter for a real CI pipeline:
@@ -129,6 +140,7 @@ These are easy to miss but are included because they matter for a real CI pipeli
 - **Cleanup**: workspace and locally built images are removed in a `finally` block
   regardless of outcome, so agents don't fill up with stale images.
 - **Notifications**: a single `post`-style notifier reports success/failure to Slack.
+- **Admin-only vulnerability gate bypass**: see "Security scan bypass" above.
 
 ## Suggested future enhancements
 

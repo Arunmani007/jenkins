@@ -114,6 +114,12 @@ classDiagram
 - **Config precedence** `defaults -> .ci/ci-config.yaml -> ciPipeline(...) args` lets
   platform defaults apply everywhere, repos self-serve common overrides via a
   versioned file, and still allows one-off overrides directly in the Jenkinsfile.
+- **Admin-gated security scan bypass**: a `BYPASS_SECURITY_SCAN` build parameter
+  lets a failed build be retriggered past the vulnerability gate, but
+  `SecurityScanner.groovy` re-checks the triggering user's Jenkins
+  `ADMINISTER` permission server-side before honoring it - a dev ticking the
+  checkbox themselves has no effect, since Jenkins has no native per-parameter
+  permission control. Bypass usage is always logged with the acting user's ID.
 
 ## GCP infrastructure (`infra/`)
 
@@ -122,7 +128,7 @@ for deployment steps.
 
 ```mermaid
 flowchart TB
-    subgraph VPC["GCP VPC (no external IPs)"]
+    subgraph VPC["GCP VPC (no external IPs on VMs)"]
         Controller["Jenkins Controller<br/>GCE VM, persistent disk<br/>JCasC-configured"]
         subgraph Agent["Agent VM (one-shot, created per build)"]
             Docker["Docker Engine"]
@@ -134,10 +140,18 @@ flowchart TB
         Agent -->|egress| NAT
     end
     IAP["Identity-Aware Proxy tunnel"] -->|admin access, 8080/22| Controller
+    LB["External HTTP LB (optional, enable_jenkins_lb)"] -->|":80, via Cloud DNS mapping"| Controller
     BuildC -->|push| Artifactory[(Artifactory)]
     GCEPlugin["GCE Plugin"] -.->|create/delete, oneShot| Agent
     Controller --- GCEPlugin
 ```
+
+The controller is a single VM, not a cluster - Jenkins has no supported mode
+for multiple controller replicas sharing `JENKINS_HOME`/build state, so
+there's no auto-recreation on failure here. The optional load balancer is
+plain HTTP with no TLS - map its IP to a domain via Cloud DNS and terminate
+TLS yourself if exposing it beyond trusted networks.
+
 
 Why the agent VM stays minimal (Java, SSH, Docker Engine only) while all build
 tooling lives in the `jenkins-build` image: the Jenkins GCE plugin launches

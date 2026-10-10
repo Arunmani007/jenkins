@@ -4,6 +4,9 @@ Provisions:
 
 - A Jenkins **controller** on a GCE VM (Terraform), configured entirely via
   **Jenkins Configuration as Code (JCasC)** - no manual UI setup.
+- An **optional external HTTP load balancer** (`enable_jenkins_lb`) in front
+  of the controller VM, for a stable public IP you map to your own domain
+  via Cloud DNS. No TLS/cert is provisioned here - plain HTTP only.
 - A **custom GCE machine image** (Packer) for agent VMs: just Java, SSH, and
   Docker Engine - the minimum the Jenkins GCE plugin and Docker Pipeline need.
 - A **pipeline build Docker image** carrying `docker` CLI, `git`, `trivy`,
@@ -11,7 +14,9 @@ Provisions:
   inside, via `docker.image(cfg.buildImage).inside(...)`.
 - **User access management**: a bootstrap local admin (password generated into
   Secret Manager, never stored in this repo) plus role-based authorization
-  (`admin` vs `authenticated` roles) via JCasC.
+  (`admin` vs `authenticated` roles) via JCasC. Additional usernames can be
+  granted the `admin` role via `additional_admin_usernames` (they still need
+  a local account created manually - see JENKINS_SETUP.md).
 - **Shared library registration**: `ci-shared-library` is registered as a
   Global Pipeline Library automatically via JCasC - no manual
   *Manage Jenkins -> Global Pipeline Libraries* step.
@@ -129,9 +134,10 @@ This provisions the VPC/subnet/NAT/firewall rules, the controller + agent
 service accounts (least privilege, kept separate per GCE plugin guidance), the
 controller VM (persistent disk for `JENKINS_HOME`, JCasC config rendered from
 [casc/jenkins.yaml.tftpl](terraform/casc/jenkins.yaml.tftpl)), a generated admin
-password in Secret Manager, and outputs the controller's internal IP.
+password in Secret Manager, and outputs the controller's internal IP (plus
+`jenkins_lb_ip` if `enable_jenkins_lb = true`).
 
-The controller has **no external IP**. Reach it via an IAP tunnel:
+The controller VM itself has **no external IP**. Reach it via an IAP tunnel:
 
 ```bash
 gcloud compute start-iap-tunnel jenkins-controller 8080 \
@@ -159,10 +165,11 @@ not covered here (credentials for Artifactory, Slack, etc.), see
 |---|---|
 | GCP cloud agent (machine image, GCE cloud config, IAM) | Automated |
 | Shared library registration | Automated (JCasC `globalLibraries`) |
-| User access management | Automated baseline: local bootstrap admin + role-based authorization (`admin`/`authenticated`). Not SSO - see below. |
+| User access management | Automated baseline: local bootstrap admin + role-based authorization (`admin`/`authenticated`), extensible to multiple admins via `additional_admin_usernames`. Not SSO - see below. |
 | Pipeline job creation | Automated for GitHub repos via the Organization Folder (step 4). Non-GitHub SCMs need a different branch-source plugin. |
 | Artifactory / Slack credentials | **Manual** - see [../test/docs/JENKINS_SETUP.md](../test/docs/JENKINS_SETUP.md) |
-| TLS/HTTPS, custom domain, backups/DR | **Not covered** - add a load balancer + managed cert and a disk-snapshot schedule for `jenkins-home` if needed |
+| Public access | Optional: external HTTP load balancer (`enable_jenkins_lb`) with a stable IP - **Manual** DNS mapping (e.g. Cloud DNS) and **no TLS** provisioned here |
+| TLS/HTTPS, backups/DR, controller HA | **Not covered** - the controller is a single VM with no auto-recreation on failure; terminate TLS in front of the load balancer yourself, and add a disk-snapshot schedule for `jenkins-home` and/or a recreation runbook if needed |
 | SSO (Google/SAML/LDAP) | Not implemented - the `google-oauth-plugin` in `plugins.txt` is only a dependency of the GCE plugin, not a login method. Swap the `local` `securityRealm` in [casc/jenkins.yaml.tftpl](terraform/casc/jenkins.yaml.tftpl) for your SSO plugin of choice if needed. |
 
 The Organization Folder's Job DSL (`jobs:` block in the CasC file) uses method
@@ -186,3 +193,12 @@ the rest of the JCasC config still applies even if this one block fails.
 - **One-shot agents**: guarantees a clean, unmodified environment per build and
   minimizes cost, at the expense of a cold-start delay per build (mitigated by
   pre-pulling `jenkins-build` into the machine image in step 2).
+- **Controller is a single VM, not a cluster**: Jenkins has no supported
+  active-active controller mode (single `JENKINS_HOME` writer, in-memory
+  queue/executors), so this deliberately doesn't attempt HA/auto-recreation -
+  if the instance or disk is lost, recovery is a manual `terraform apply`
+  plus restoring `jenkins-home` from a snapshot (not automated here).
+- **Load balancer has no TLS**: `enable_jenkins_lb` only adds a plain-HTTP
+  listener + stable IP via an unmanaged instance group wrapping the single
+  VM; pick your own TLS termination (CDN, another proxy) before exposing it
+  beyond trusted networks.

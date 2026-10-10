@@ -34,6 +34,18 @@ variable "controller_image" {
   description = "Jenkins controller container image"
 }
 
+variable "enable_jenkins_lb" {
+  type        = bool
+  default     = false
+  description = "Provision an external HTTP load balancer (no TLS/cert - terminate TLS yourself, e.g. in front of Cloud DNS/another proxy) in front of the controller MIG. Leave false to keep IAP-tunnel-only access."
+}
+
+variable "jenkins_domain_name" {
+  type        = string
+  default     = ""
+  description = "Public DNS name for the Jenkins UI (e.g. jenkins.example.com), used only for Jenkins' own systemMessage/location URL. Point this at jenkins_lb_ip via Cloud DNS yourself - not used for certificate provisioning."
+}
+
 variable "agent_machine_type" {
   type    = string
   default = "e2-medium"
@@ -60,7 +72,13 @@ variable "admin_access_cidrs" {
 variable "admin_username" {
   type        = string
   default     = "admin"
-  description = "Bootstrap Jenkins admin user. Password is generated and stored in Secret Manager - see output jenkins_admin_password_secret_id."
+  description = "Bootstrap Jenkins admin user (gets the local account + generated password in Secret Manager)."
+}
+
+variable "additional_admin_usernames" {
+  type        = list(string)
+  default     = []
+  description = "Extra user IDs granted the 'admin' role, on top of admin_username. These must already exist (or be created afterward) as local Jenkins users - this only grants the role, it does not create login accounts or passwords for them."
 }
 
 variable "shared_library_repo_url" {

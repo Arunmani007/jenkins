@@ -12,6 +12,11 @@ zone       = "us-central1-a"
 
 controller_image = "us-docker.pkg.dev/my-gcp-project/ci/jenkins-controller:latest"
 
+# Set true to provision an external HTTP load balancer (plain HTTP, no
+# cert here - map jenkins_lb_ip to a domain via Cloud DNS yourself).
+enable_jenkins_lb   = false
+jenkins_domain_name = ""
+
 shared_library_repo_url        = "https://github.com/<org>/<ci-shared-library-repo>.git"
 shared_library_default_version = "main"
 
@@ -19,6 +24,9 @@ github_org            = "<org-to-auto-scan>"
 github_credentials_id = "github-token"
 
 admin_username = "admin"
+# Extra usernames granted the 'admin' role (must separately exist as local
+# Jenkins users - this grants the role only, not a login account/password).
+additional_admin_usernames = []
 
 agent_image_family = "jenkins-gce-agent"
 agent_machine_type = "e2-medium"

@@ -9,6 +9,18 @@ import org.ci.Notifier
 //   @Library('ci-shared-library') _
 //   ciPipeline()
 def call(Map userConfig = [:]) {
+    // Only takes effect from the second build onward (Jenkins limitation) - the
+    // checkbox appears when manually retriggering a build that failed the scan.
+    properties([
+        parameters([
+            booleanParam(
+                name: 'BYPASS_SECURITY_SCAN',
+                defaultValue: false,
+                description: 'Admins only - bypass the vulnerability gate when retriggering a build that failed Scan Image. Ignored for non-admins.'
+            )
+        ])
+    ])
+
     node(userConfig.agentLabel ?: 'docker') {
         Map cfg = null
         String imageTag = null
@@ -56,7 +68,7 @@ def call(Map userConfig = [:]) {
 
                     // 3. Scan the image for vulnerabilities and quality issues.
                     stage('Scan Image') {
-                        new SecurityScanner(this, cfg).scan(imageTag)
+                        new SecurityScanner(this, cfg).scan(imageTag, params.BYPASS_SECURITY_SCAN ?: false)
                     }
 
                     if (cfg.pushEnabled) {
